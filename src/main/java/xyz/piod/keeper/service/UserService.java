@@ -85,6 +85,14 @@ public class UserService {
         return publicId;
     }
 
+    @CacheEvict(value = CacheConfig.USER_CACHE, key = "#username")
+    public void saveFcmToken(String username, String fcmToken) {
+        User user = findUserByUsername(username);
+        user.setFcmToken(fcmToken);
+        userRepository.save(user);
+        log.info("saved fcm token for user {}", username);
+    }
+
     public void setPassword(String username, String newPassword, String recaptchaToken) {
         if (!isRecaptchaValid(recaptchaToken)) {
             throw new IllegalArgumentException("reCAPTCHA validation failed.");

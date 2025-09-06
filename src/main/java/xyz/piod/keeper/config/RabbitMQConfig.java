@@ -18,6 +18,10 @@ public class RabbitMQConfig {
     public static final String MESSAGE_COMMANDS_QUEUE = "keeper.message.commands";
     public static final String MESSAGE_COMMAND_ROUTING_KEY = "cmd.v2.message.#";
 
+    public static final String NOTIFICATIONS_QUEUE = "keeper.notifications";
+    public static final String NOTIFICATION_EVENTS_ROUTING_KEY = "event.notification.#";
+
+
     @Bean
     public TopicExchange keeperExchange() {
         return new TopicExchange(KEEPER_EXCHANGE);
@@ -29,8 +33,18 @@ public class RabbitMQConfig {
     }
 
     @Bean
+    public Queue notificationsQueue() {
+        return new Queue(NOTIFICATIONS_QUEUE, true);
+    }
+
+    @Bean
     public Binding messageCommandsBinding(Queue messageCommandsQueue, TopicExchange keeperExchange) {
         return BindingBuilder.bind(messageCommandsQueue).to(keeperExchange).with(MESSAGE_COMMAND_ROUTING_KEY);
+    }
+
+    @Bean
+    public Binding notificationsBinding(Queue notificationsQueue, TopicExchange keeperExchange) {
+        return BindingBuilder.bind(notificationsQueue).to(keeperExchange).with(NOTIFICATION_EVENTS_ROUTING_KEY);
     }
 
     @Bean

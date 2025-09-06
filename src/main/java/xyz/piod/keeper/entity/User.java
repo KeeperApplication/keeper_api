@@ -43,6 +43,9 @@ public class User {
     @Column(nullable = false)
     private AuthProvider authProvider;
 
+    @Column(columnDefinition = "TEXT")
+    private String fcmToken;
+
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;

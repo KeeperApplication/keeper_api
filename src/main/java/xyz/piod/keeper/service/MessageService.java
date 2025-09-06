@@ -2,27 +2,33 @@ package xyz.piod.keeper.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import xyz.piod.keeper.config.RabbitMQConfig;
 import xyz.piod.keeper.dto.ChatMessage;
 import xyz.piod.keeper.dto.LinkPreviewRequest;
 import xyz.piod.keeper.dto.MessageResponse;
+import xyz.piod.keeper.dto.NotificationPayload;
 import xyz.piod.keeper.entity.ChatRoom;
 import xyz.piod.keeper.entity.Message;
 import xyz.piod.keeper.entity.MessageReadReceipt;
 import xyz.piod.keeper.entity.User;
 import xyz.piod.keeper.exception.ResourceNotFoundException;
 import xyz.piod.keeper.exception.UnauthorizedOperationException;
+import xyz.piod.keeper.mapper.ChatRoomMapper;
 import xyz.piod.keeper.mapper.MessageMapper;
 import xyz.piod.keeper.repository.ChatRoomRepository;
+import xyz.piod.keeper.repository.HiddenChatRoomRepository;
 import xyz.piod.keeper.repository.MessageReadReceiptRepository;
 import xyz.piod.keeper.repository.MessageRepository;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -33,12 +39,17 @@ import java.util.stream.Collectors;
 @Slf4j
 public class MessageService {
 
+    private static final String ONLINE_USERS_REDIS_KEY = "presence:online_users";
     private final MessageRepository messageRepository;
     private final ChatRoomRepository chatRoomRepository;
     private final MessageReadReceiptRepository readReceiptRepository;
     private final BroadcastService broadcastService;
     private final MessageMapper messageMapper;
     private final UserService userService;
+    private final RabbitTemplate rabbitTemplate;
+    private final RedisTemplate<String, String> redisTemplate;
+    private final HiddenChatRoomRepository hiddenChatRoomRepository;
+    private final ChatRoomMapper chatRoomMapper;
 
     public List<MessageResponse> getPinnedMessagesForRoom(Long roomId) {
         UserDetails principal = (UserDetails) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
@@ -67,6 +78,7 @@ public class MessageService {
         return messagesPage.map(messageMapper::toMessageResponse);
     }
 
+    @Transactional
     public void saveAndBroadcastMessage(Long roomId, ChatMessage chatMessage, User sender) {
         if (chatMessage.getContent() == null || chatMessage.getContent().length() > 2000) {
             log.warn("User {} attempted to send a message exceeding the 2000 character limit in room {}.",
@@ -76,6 +88,8 @@ public class MessageService {
 
         ChatRoom chatRoom = chatRoomRepository.findById(roomId)
                 .orElseThrow(() -> new ResourceNotFoundException("ChatRoom not found with id: " + roomId));
+
+        unhideRoomForRecipients(chatRoom, sender);
 
         Message message = new Message();
         message.setContent(chatMessage.getContent());
@@ -103,6 +117,55 @@ public class MessageService {
         String topic = "room:" + roomId;
         broadcastService.broadcast(topic, "new_event", broadcastMessage);
 
+        sendNotificationsToOfflineUsers(chatRoom, savedMessage);
+    }
+
+    private void unhideRoomForRecipients(ChatRoom chatRoom, User sender) {
+        if (!chatRoom.isPrivate()) {
+            return;
+        }
+
+        chatRoom.getParticipants().stream()
+                .filter(participant -> !participant.equals(sender))
+                .forEach(recipient -> {
+                    hiddenChatRoomRepository.findByUserAndChatRoom(recipient, chatRoom)
+                            .ifPresent(hiddenRoom -> {
+                                hiddenChatRoomRepository.delete(hiddenRoom);
+
+                                ChatMessage notification = new ChatMessage();
+                                notification.setType(ChatMessage.MessageType.DM_CHANNEL_CREATED);
+                                notification.setRoom(chatRoomMapper.toChatRoomResponse(chatRoom));
+
+                                broadcastService.broadcast("user:" + recipient.getUsername(), "new_event", notification);
+                                log.info("un-hid dm room #{} for user {} and sent notification", chatRoom.getId(), recipient.getUsername());
+                            });
+                });
+    }
+
+    private void sendNotificationsToOfflineUsers(ChatRoom chatRoom, Message message) {
+        Set<String> onlineUsers = redisTemplate.opsForSet().members(ONLINE_USERS_REDIS_KEY);
+
+        final String notificationRoutingKey = "event.notification.new_message";
+
+        chatRoom.getParticipants().stream()
+                .filter(participant -> !participant.equals(message.getSender()))
+                .filter(participant -> onlineUsers == null || !onlineUsers.contains(participant.getUsername()))
+                .filter(participant -> participant.getFcmToken() != null && !participant.getFcmToken().isEmpty())
+                .forEach(recipient -> {
+                    boolean isHiddenDm = chatRoom.isPrivate() && hiddenChatRoomRepository.findByUserAndChatRoom(recipient, chatRoom).isPresent();
+
+                    if (isHiddenDm) {
+                        NotificationPayload payload = new NotificationPayload(
+                                recipient.getUsername(),
+                                message.getSender().getUsername(),
+                                message.getContent(),
+                                chatRoom.getId(),
+                                recipient.getFcmToken()
+                        );
+                        rabbitTemplate.convertAndSend(RabbitMQConfig.KEEPER_EXCHANGE, notificationRoutingKey, payload);
+                        log.info("published notification event for offline user {} in a hidden dm", recipient.getUsername());
+                    }
+                });
     }
 
     public void updateMessageWithLinkPreview(Long messageId, LinkPreviewRequest previewRequest) {

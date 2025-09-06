@@ -8,6 +8,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 import xyz.piod.keeper.dto.AccountStatusResponse;
 import xyz.piod.keeper.dto.AccountUpdateRequest;
+import xyz.piod.keeper.dto.FcmTokenRequest;
 import xyz.piod.keeper.dto.SetPasswordRequest;
 import xyz.piod.keeper.dto.UserResponse;
 import xyz.piod.keeper.entity.User;
@@ -46,6 +47,12 @@ public class AccountController {
     @PostMapping("/set-password")
     public ResponseEntity<Void> setPassword(@Valid @RequestBody SetPasswordRequest request, @AuthenticationPrincipal UserDetails principal) {
         userService.setPassword(principal.getUsername(), request.password(), request.recaptchaToken());
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/fcm-token")
+    public ResponseEntity<Void> saveFcmToken(@Valid @RequestBody FcmTokenRequest request, @AuthenticationPrincipal UserDetails principal) {
+        userService.saveFcmToken(principal.getUsername(), request.getToken());
         return ResponseEntity.ok().build();
     }
 }
