@@ -11,15 +11,16 @@ import org.springframework.security.web.authentication.SimpleUrlAuthenticationSu
 import org.springframework.stereotype.Component;
 import org.springframework.web.util.UriComponentsBuilder;
 import xyz.piod.keeper.entity.User;
+import xyz.piod.keeper.service.AuthenticationService;
 import xyz.piod.keeper.service.JwtService;
-import xyz.piod.keeper.service.UserService;
+
 import java.io.IOException;
 
 @Component
 @RequiredArgsConstructor
 public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationSuccessHandler {
 
-    private final UserService userService;
+    private final AuthenticationService authenticationService;
     private final JwtService jwtService;
 
     @Value("${frontend.url}")
@@ -33,13 +34,14 @@ public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationS
         String name = oauthUser.getAttribute("name");
         String imageUrl = oauthUser.getAttribute("picture");
 
-        User user = userService.processOAuthPostLogin(email, name, imageUrl);
+        User user = authenticationService.processOAuthPostLogin(email, name, imageUrl);
 
         String jwt = jwtService.generateToken(user);
 
         String targetUrl = UriComponentsBuilder.fromUriString(frontendUrl + "/auth/callback")
                 .queryParam("token", jwt)
-                .build().toUriString();
+                .build()
+                .toUriString();
 
         getRedirectStrategy().sendRedirect(request, response, targetUrl);
     }
