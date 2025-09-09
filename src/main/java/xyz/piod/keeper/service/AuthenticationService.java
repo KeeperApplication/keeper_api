@@ -12,6 +12,7 @@ import org.springframework.web.client.RestTemplate;
 import xyz.piod.keeper.config.CacheConfig;
 import xyz.piod.keeper.dto.AccountUpdateRequest;
 import xyz.piod.keeper.dto.RecaptchaResponse;
+import xyz.piod.keeper.dto.UserLoginStatus;
 import xyz.piod.keeper.entity.AuthProvider;
 import xyz.piod.keeper.entity.User;
 import xyz.piod.keeper.exception.ResourceNotFoundException;
@@ -33,6 +34,14 @@ public class AuthenticationService {
 
     @Value("${recaptcha.secret-key}")
     private String recaptchaSecretKey;
+
+    public UserLoginStatus checkUserStatus(String email) {
+        Optional<User> userOptional = userRepository.findByEmail(email);
+        if (userOptional.isEmpty() || userOptional.get().getPassword() == null) {
+            return UserLoginStatus.REQUIRES_OTP;
+        }
+        return UserLoginStatus.REQUIRES_PASSWORD;
+    }
 
     @Transactional
     public User processOAuthPostLogin(String email, String name, String imageUrl) {
@@ -63,6 +72,30 @@ public class AuthenticationService {
     }
 
     @Transactional
+    public User loginOrRegisterLocalUser(String email) {
+        Optional<User> userOptional = userRepository.findByEmail(email);
+
+        if (userOptional.isPresent()) {
+            User existingUser = userOptional.get();
+            log.info("Processing local login for existing user: {}", email);
+            return existingUser;
+        } else {
+            log.info("Creating new user from local flow for email: {}", email);
+            User newUser = new User();
+            newUser.setEmail(email);
+            newUser.setAuthProvider(AuthProvider.LOCAL);
+            newUser.setPublicId(generateUniquePublicId());
+
+            String usernameBase = email.substring(0, email.indexOf('@'));
+            String finalUsername = generateUniqueUsername(usernameBase);
+            newUser.setUsername(finalUsername);
+
+            return userRepository.save(newUser);
+        }
+    }
+
+    @Transactional
+    @CacheEvict(value = CacheConfig.USER_CACHE, key = "#username")
     public void setPassword(String username, String newPassword, String recaptchaToken) {
         if (!isRecaptchaValid(recaptchaToken)) {
             throw new IllegalArgumentException("reCAPTCHA validation failed.");

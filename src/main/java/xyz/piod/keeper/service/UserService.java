@@ -32,6 +32,13 @@ public class UserService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + username));
     }
 
+    @Cacheable(value = CacheConfig.USER_CACHE, key = "'email:' + #email")
+    public User findUserByEmail(String email) {
+        log.info("DATABASE HIT: Fetching user by email '{}' from database.", email);
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with email: " + email));
+    }
+
     @Cacheable(value = CacheConfig.USER_CACHE, key = "'publicId:' + #publicId")
     public User findUserByPublicId(String publicId) {
         log.info("DATABASE HIT: Fetching user by publicId '{}' from database.", publicId);
