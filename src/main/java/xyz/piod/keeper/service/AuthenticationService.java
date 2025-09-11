@@ -3,23 +3,16 @@ package xyz.piod.keeper.service;
 import jakarta.validation.ValidationException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.RestTemplate;
 import xyz.piod.keeper.config.CacheConfig;
 import xyz.piod.keeper.dto.AccountUpdateRequest;
-import xyz.piod.keeper.dto.RecaptchaResponse;
-import xyz.piod.keeper.dto.UserLoginStatus;
 import xyz.piod.keeper.entity.AuthProvider;
 import xyz.piod.keeper.entity.User;
 import xyz.piod.keeper.exception.ResourceNotFoundException;
-import xyz.piod.keeper.exception.UnauthorizedOperationException;
 import xyz.piod.keeper.repository.UserRepository;
 
-import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -29,19 +22,6 @@ import java.util.concurrent.ThreadLocalRandom;
 public class AuthenticationService {
 
     private final UserRepository userRepository;
-    private final PasswordEncoder passwordEncoder;
-    private final RestTemplate restTemplate = new RestTemplate();
-
-    @Value("${recaptcha.secret-key}")
-    private String recaptchaSecretKey;
-
-    public UserLoginStatus checkUserStatus(String email) {
-        Optional<User> userOptional = userRepository.findByEmail(email);
-        if (userOptional.isEmpty() || userOptional.get().getPassword() == null) {
-            return UserLoginStatus.REQUIRES_OTP;
-        }
-        return UserLoginStatus.REQUIRES_PASSWORD;
-    }
 
     @Transactional
     public User processOAuthPostLogin(String email, String name, String imageUrl) {
@@ -95,36 +75,12 @@ public class AuthenticationService {
     }
 
     @Transactional
-    @CacheEvict(value = CacheConfig.USER_CACHE, key = "#username")
-    public void setPassword(String username, String newPassword, String recaptchaToken) {
-        if (!isRecaptchaValid(recaptchaToken)) {
-            throw new IllegalArgumentException("reCAPTCHA validation failed.");
-        }
-
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-
-        if (user.getPassword() != null) {
-            throw new IllegalStateException("User already has a password set.");
-        }
-
-        user.setPassword(passwordEncoder.encode(newPassword));
-        user.setPasswordChangedAt(LocalDateTime.now());
-        userRepository.save(user);
-    }
-
-    @Transactional
     @CacheEvict(value = CacheConfig.USER_CACHE, key = "#currentUsername")
     public User updateUserAccount(String currentUsername, AccountUpdateRequest request) {
         User user = userRepository.findByUsername(currentUsername)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with username: " + currentUsername));
 
         boolean isUsernameChange = request.getUsername() != null && !request.getUsername().isEmpty() && !request.getUsername().equals(user.getUsername());
-        boolean isPasswordChange = request.getNewPassword() != null && !request.getNewPassword().isEmpty();
-
-        if (isUsernameChange || isPasswordChange) {
-            validateCurrentPassword(user, request.getCurrentPassword());
-        }
 
         if (isUsernameChange) {
             if (userRepository.findByUsername(request.getUsername()).isPresent()) {
@@ -133,46 +89,11 @@ public class AuthenticationService {
             user.setUsername(request.getUsername());
         }
 
-        if (isPasswordChange) {
-            user.setPassword(passwordEncoder.encode(request.getNewPassword()));
-            user.setPasswordChangedAt(LocalDateTime.now());
-        }
-
         if (request.getProfilePicture() != null) {
             user.setProfilePicture(request.getProfilePicture());
         }
 
         return userRepository.save(user);
-    }
-
-    private void validateCurrentPassword(User user, String currentPasswordRequest) {
-        if (user.getPassword() == null) {
-            throw new UnauthorizedOperationException("Cannot change sensitive data for an account created with Google without a password set first.");
-        }
-        if (currentPasswordRequest == null || !passwordEncoder.matches(currentPasswordRequest, user.getPassword())) {
-            throw new UnauthorizedOperationException("Current password is incorrect.");
-        }
-    }
-
-    private boolean isRecaptchaValid(String token) {
-        if (token == null || token.isEmpty()) {
-            log.warn("reCAPTCHA token is null or empty.");
-            return false;
-        }
-        String url = "https://www.google.com/recaptcha/api/siteverify?secret=" + recaptchaSecretKey + "&response=" + token;
-        try {
-            RecaptchaResponse response = restTemplate.getForObject(url, RecaptchaResponse.class);
-            if (response != null && response.isSuccess()) {
-                log.info("reCAPTCHA validation successful for host: {}", response.getHostname());
-                return true;
-            } else {
-                log.warn("reCAPTCHA validation failed. Response: {}", response);
-                return false;
-            }
-        } catch (Exception e) {
-            log.error("Error while validating reCAPTCHA token", e);
-            return false;
-        }
     }
 
     private String generateUniqueUsername(String baseUsername) {

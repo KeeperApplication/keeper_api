@@ -15,7 +15,6 @@ import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.PKCS8EncodedKeySpec;
-import java.time.ZoneId;
 import java.util.Base64;
 import java.util.Date;
 import java.util.HashMap;
@@ -82,24 +81,16 @@ public class JwtService {
                 .getBody();
     }
 
-    public boolean isTokenValid(String token, UserDetails userDetails, User user) {
+    public boolean isTokenValid(String token, UserDetails userDetails) {
         final String username = extractUsername(token);
-
-        if (user.getPasswordChangedAt() != null) {
-            final Date tokenIssuedAt = extractClaim(token, Claims::getIssuedAt);
-            final Date passwordChangedDate = Date
-                    .from(user.getPasswordChangedAt().atZone(ZoneId.systemDefault()).toInstant());
-            if (tokenIssuedAt.before(passwordChangedDate)) {
-                return false;
-            }
-        }
-
         return (username.equals(userDetails.getUsername())) && !isTokenExpired(token);
     }
 
     private boolean isTokenExpired(String token) {
         return extractExpiration(token).before(new Date());
     }
+
+
 
     private Date extractExpiration(String token) {
         return extractClaim(token, Claims::getExpiration);

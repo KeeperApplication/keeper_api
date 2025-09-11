@@ -35,19 +35,6 @@ public class AccountController {
         return ResponseEntity.ok(userMapper.toUserResponse(user));
     }
 
-    @GetMapping("/status")
-    public ResponseEntity<AccountStatusResponse> getAccountStatus(@AuthenticationPrincipal UserDetails principal) {
-        User user = userService.findUserByUsername(principal.getUsername());
-        boolean requiresSetup = user.getPassword() == null;
-        return ResponseEntity.ok(new AccountStatusResponse(requiresSetup));
-    }
-
-    @PostMapping("/set-password")
-    public ResponseEntity<Void> setPassword(@Valid @RequestBody SetPasswordRequest request, @AuthenticationPrincipal UserDetails principal) {
-        authenticationService.setPassword(principal.getUsername(), request.password(), request.recaptchaToken());
-        return ResponseEntity.ok().build();
-    }
-
     @PostMapping("/fcm-token")
     public ResponseEntity<Void> registerFcmToken(@RequestBody @Valid FcmTokenRequest request,
                                                  @AuthenticationPrincipal UserDetails principal) {

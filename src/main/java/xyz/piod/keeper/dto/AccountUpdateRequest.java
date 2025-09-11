@@ -7,7 +7,5 @@ import lombok.Data;
 public class AccountUpdateRequest {
     @Size(max = 15, message = "Username must not exceed 15 characters")
     private String username;
-    private String currentPassword;
-    private String newPassword;
     private String profilePicture;
 }

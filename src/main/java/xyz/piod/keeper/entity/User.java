@@ -33,9 +33,6 @@ public class User {
     @Column(nullable = false, unique = true)
     private String email;
 
-    @Column(nullable = true)
-    private String password;
-
     @Column(columnDefinition = "TEXT")
     private String profilePicture;
 
@@ -49,8 +46,6 @@ public class User {
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
-
-    private LocalDateTime passwordChangedAt;
 
     @Override
     public boolean equals(Object o) {

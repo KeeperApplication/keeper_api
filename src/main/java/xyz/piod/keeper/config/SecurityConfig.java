@@ -44,7 +44,7 @@ public class SecurityConfig {
             xyz.piod.keeper.entity.User user = userService.findUserByEmail(username);
             return new org.springframework.security.core.userdetails.User(
                     user.getEmail(),
-                    user.getPassword() != null ? user.getPassword() : "",
+                    "",
                     List.of(new SimpleGrantedAuthority("ROLE_USER"))
             );
         };
@@ -74,7 +74,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOriginPatterns(Arrays.asList(frontendUrl, "http://localhost:5173/"));
+        configuration.setAllowedOriginPatterns(Arrays.asList(frontendUrl, "http://localhost:5173/", "http://localhost:63659"));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);
